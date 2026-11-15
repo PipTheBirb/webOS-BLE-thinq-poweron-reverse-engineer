@@ -1,0 +1,106 @@
+STAGE 4 — RUNNING INVESTIGATION LOG
+
+Project: webOS-BLE-thinq-poweron-reverse-engineer
+APK: com.lgeha.nuts 5.2.14331
+Decompiled tree: /tmp/opencode/lg/base
+
+OBJECTIVE
+Trace registered_bt_address through BLE registration and document the phone-side feba GATT server lifecycle. Establish whether dc:03:98:26:83:41 is demonstrably the registered TV address.
+
+COMPLETED BEFORE STAGE 4
+- Stage 1: Fedora/BlueZ simultaneous BLE advertising and scanning test passed.
+- Stage 2: Captured actual LG TV advertisement.
+- Stage 3: Draft LECCP wake-up specification created.
+- Manufacturer payload: phone identity [6] + 07 00 + registered TV address [6].
+- Company ID: 0x00C4.
+- Phone service UUID: feba.
+- TV advertisement service UUID: feb9.
+- Candidate decoded TV address: dc:03:98:26:83:41.
+- Candidate is NOT yet confirmed as the registered address.
+
+STAGE 4 — PART A: REGISTERED ADDRESS
+
+Confirmed:
+- BleScanner.smali:962 calls LeccpAdvertisingInfo.getAddress([B).
+- The parser extracts six bytes from AD type 0x1B and reverses their order.
+- ConnectSdkHandler$53$1.run() checks data_register_wake_up.
+- It calls ThingsDevice.getServiceId(v2).
+- It checks the result is non-empty.
+- It validates the result using ConnectSdkUtils.isMacAddress().
+- If valid, it stores the value as registered_bt_address.
+
+Latest inspected excerpt:
+File:
+/tmp/opencode/lg/base/smali_classes4/com/lge/lms/things/service/smarttv/connectsdk/ConnectSdkHandler$53$1.smali
+
+Lines 180–230:
+- Shows the data_register_wake_up check.
+- Shows ThingsDevice.getServiceId(v2).
+- Shows non-empty and MAC-address validation.
+- Shows putData("registered_bt_address", value).
+
+Still unresolved:
+- Where v2 originates.
+- Whether the service ID comes from the AD 0x1B decoded address.
+- Whether any transformations occur between decoding and storage.
+- Whether dc:03:98:26:83:41 is the actual registered address.
+
+NEXT COMMAND:
+sed -n '130,185p' '/tmp/opencode/lg/base/smali_classes4/com/lge/lms/things/service/smarttv/connectsdk/ConnectSdkHandler$53$1.smali'
+
+STAGE 4 — PART B: PHONE GATT SERVER
+
+Earlier findings, requiring exact line verification:
+- Phone opens a GATT server after advertising succeeds.
+- It adds a primary feba service with zero characteristics.
+- onServiceAdded compares against feb9 rather than feba.
+- APK wake-success path appears to depend on matching the TV advertisement, not GATT traffic.
+
+Still to investigate:
+- Exact GATT server lifecycle and callbacks.
+- Connection-state callback behaviour.
+- Failure handling if GATT server or service registration fails.
+- Whether any read/write/notification handlers exist.
+
+RESTRICTIONS
+- Static APK analysis only.
+- No Bluetooth commands or connections.
+- No TV interaction.
+- No scripts, installations or implementation.
+- No edits to LECCP_WAKEUP_SPEC_DRAFT.md or stage1_ble_concurrency.py.
+- Keep confirmed facts, inferences and unknowns separate.
+- Include exact smali paths and line ranges.
+
+REPORT STATUS
+Incomplete. No final Stage 4 report yet.
+
+STAGE 4 — RUNNING INVESTIGATION LOG
+
+NEW FINDING — 15 NOVEMBER 2026
+
+File:
+`/tmp/opencode/lg/base/smali_classes4/com/lge/lms/things/service/smarttv/connectsdk/ConnectSdkHandler$53$1.smali`
+
+Lines 45 onwards:
+- Reads `val$registeredThingsDevice.getServiceId()`.
+- Calls `ThingsDevice.getDeviceId(SMART_TV, serviceId)`.
+- Stores the resulting device ID in v2.
+- Uses v2 to retrieve the ConnectSdkDevice from a Hashtable.
+- Later calls `ThingsDevice.getServiceId(v2)`.
+- Validates the extracted value with `ConnectSdkUtils.isMacAddress()`.
+- Stores it as `registered_bt_address`.
+
+File:
+`/tmp/opencode/lg/base/smali_classes12/com/lge/lms/things/model/ThingsDevice.smali`
+
+Previously identified:
+- `getDeviceId()` lowercases the service ID when constructing the device ID.
+- Static `getServiceId(String)` extracts the substring after the underscore.
+
+Interpretation:
+The registration callback appears to recover the lowercased original ThingsDevice service ID and store it as registered_bt_address.
+
+Still unproven:
+Where the original ThingsDevice service ID originates, and whether it is the address decoded from AD type 0x1B.
+
+Candidate address `dc:03:98:26:83:41` remains unverified.

@@ -1,0 +1,132 @@
+# Project Handoff — LG ThinQ LECCP BLE Wake-Up Reverse Engineering
+
+**Purpose:** Resume this project in a future ChatGPT conversation, OpenCode session, or a combination of both.
+
+## Project goal
+
+Understand how the LG ThinQ Android app wakes an LG webOS television from standby using Bluetooth Low Energy (BLE), then determine whether the relevant behaviour can be reproduced from Linux and integrated with Home Assistant.
+
+The target TV is an **LG 32LM637BPLA running webOS 4.10**. The ThinQ app reliably wakes it from standby.
+
+This is an investigation, not a commitment to build or deploy a solution.
+
+## Working environment and project materials
+
+- Fedora Linux 44 KDE, machine `Pip-kestrel`.
+- Intel AX211 Bluetooth adapter.
+- BlueZ 5.87.
+- Android APK: `com.lgeha.nuts` version `5.2.14331`, version code `52001314`.
+- Decompiled APK: `/tmp/opencode/lg/base`.
+- Project repository: https://github.com/PipTheBirb/webOS-BLE-thinq-poweron-reverse-engineer
+- Stage 1 test script: `stage1_ble_concurrency.py`
+- Stage 3 specification draft: `LECCP_WAKEUP_SPEC_DRAFT.md`
+- Stage 4 investigation is ongoing.
+
+Repository and local files may have changed since this handoff was written. Inspect the relevant current files before editing or relying on them.
+
+## Working preferences and boundaries
+
+- Be technically precise. Distinguish confirmed facts, inferences, hypotheses, and unknowns.
+- Do not overcomplicate the project or introduce unnecessary hardware, services, or infrastructure.
+- Avoid purchases, cabling, invasive changes, and system reconfiguration unless genuinely necessary and explicitly discussed.
+- Preserve the existing Fedora and Bluetooth configuration.
+- Do not run commands that interact with Bluetooth hardware unless explicitly authorised.
+- Do not make changes to files, scripts, configuration, or the repository without permission.
+- Do not assume that Android application behaviour proves how the TV firmware behaves.
+- Do not assume an observed BLE address is the TV's permanent MAC address.
+- Provide exact file paths, method names, and line references when discussing APK findings.
+- Explain what a proposed command does and whether it changes anything before asking the user to run it.
+- Avoid generic advice and speculative implementation details.
+
+## Work completed
+
+### Stage 1 — Linux BLE concurrency test
+
+Completed successfully on Fedora.
+
+The AX211 adapter can advertise and scan concurrently through BlueZ. During the test, the scanner detected an LG TV advertising service UUID `feb9` and manufacturer company ID `0x00C4`, while the local test advertisement remained registered.
+
+The test ran for 60 seconds and cleaned up successfully.
+
+This confirms Linux-side advertising/scanning coexistence. It does **not** confirm that the LG wake-up payload works or that the TV accepts a Linux-generated advertisement.
+
+### Stage 2 — Passive BLE observation
+
+Completed using `btmon` as a passive observer.
+
+An LG TV advertisement was captured with:
+- Service UUID `feb9`.
+- Manufacturer company ID `0x00C4`.
+- AD type `0x1B` containing a seven-byte value.
+- A resolvable-random radio address.
+- A scan response containing the name `[TV] Gym Room`.
+
+The captured AD type `0x1B` value was:
+
+`00 41 83 26 98 03 dc`
+
+The APK parser skips the first byte, reverses the remaining six bytes, and produces the candidate:
+
+`dc:03:98:26:83:41`
+
+This is a decoded candidate address, not a verified permanent TV MAC address or confirmed stored registration value.
+
+The observed advertisement was scannable but not connectable.
+
+### Stage 3 — LECCP wake-up specification
+
+The Android APK constructs a 14-byte manufacturer-data payload:
+
+`[6-byte phone identity] [07 00] [6-byte registered TV address]`
+
+Manufacturer company ID: `0x00C4`.
+
+The phone advertises service UUID `feba` and scans for TV advertisements using service UUID `feb9`.
+
+The app uses Android BLE advertising and creates a GATT server with an empty `feba` service. The app's own wake-up success path is based on finding the registered TV address in scan results; this does not prove that the TV itself requires no GATT interaction.
+
+The detailed findings and Smali references are in `LECCP_WAKEUP_SPEC_DRAFT.md`.
+
+### Stage 4 — Static APK analysis, in progress
+
+The investigation has traced much of the address-handling path:
+
+1. `BleScanner.updateDevice()` checks for service UUID `feb9`.
+2. It calls `LeccpAdvertisingInfo.getAddress()` on the scan record.
+3. The decoded address becomes the scanner's device key.
+4. The key is passed into `LBSManager`.
+5. `LBSManager$Prepare` assigns its `mId` to `LBSDevice.id`.
+6. The registration callback `ConnectSdkHandler$53$1.run()` extracts a service ID, validates it as a MAC address, and stores it as `registered_bt_address`.
+7. The BLE wake-up path later compares `registered_bt_address` with `LBSDevice.id`.
+
+**The remaining gap:** establish exactly how the `ThingsDevice` passed into `ConnectSdkHandler$53.onRegistered()` gets its service ID, and whether that value originates from the decoded `LBSDevice.id`.
+
+The callback's use of `getServiceId()` does not by itself prove where the original service ID came from.
+
+The next investigation should trace the registration path and the construction or updating of that `ThingsDevice`, using the actual Smali assignments and call sites.
+
+## Current technical conclusions
+
+- The app uses a BLE advertising-based LECCP wake-up mechanism.
+- The phone advertises manufacturer data under company ID `0x00C4`.
+- The phone advertises service UUID `feba`.
+- The TV registration advertisements use service UUID `feb9`.
+- The app decodes an address from TV advertisement AD type `0x1B`.
+- The decoded address is used as `LBSDevice.id`.
+- The wake-up code compares the stored `registered_bt_address` with `LBSDevice.id`.
+- The exact registration data flow still needs to be closed.
+- Linux can perform concurrent advertising and scanning on the existing adapter.
+- The actual wake-up payload has not yet been tested against the TV.
+
+## How to resume
+
+First establish which materials are available in the current session:
+- If continuing in ChatGPT, use this handoff as the project context. Ask for specific terminal output only when needed.
+- If continuing in OpenCode, inspect the repository and decompiled files before continuing.
+- If using both, use ChatGPT to reason through the findings and OpenCode to inspect the local source tree. Keep conclusions and file changes explicit.
+
+Resume with the outstanding Stage 4 registration-data-flow investigation. Do not restart completed stages unless new evidence requires revisiting them.
+
+Once that link is understood, complete the Stage 4 report, then review the remaining unknowns before deciding whether any further testing is justified.
+
+**No implementation or live Bluetooth testing is authorised merely by this handoff.**
