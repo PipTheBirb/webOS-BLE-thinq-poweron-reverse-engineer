@@ -70,6 +70,8 @@ Only dummy manufacturer data (`0xFFFF`, `DEADBEEF`) was used during this test. N
 
 ## Real television observations
 
+#first stage:
+
 A passive BLE scan was performed while an LG television named `[TV] Gym Room` was in standby.
 
 The following advertisement was observed:
@@ -117,3 +119,88 @@ The actual LG wake advertisement has **not yet been transmitted from Linux**, an
 This is an independent reverse-engineering and interoperability research project. It is not affiliated with, endorsed by, or supported by LG Electronics.
 
 The findings describe observed application behaviour and Bluetooth advertisements. Some aspects of the television's firmware-side implementation remain unknown.
+
+## Stage 2 — Passive HCI Advertisement Capture
+
+**Status: Successful**
+
+A passive HCI capture was made using `btmon` while an ordinary Bleak scan was running on the Intel AX211 Bluetooth adapter (`hci0`).
+
+No HCI commands were issued manually, and no adapter settings or BlueZ configuration were changed.
+
+### Target device
+
+The LG TV `[TV] Gym Room` was observed advertising with:
+
+- Bluetooth address: `7E:45:14:82:D1:18`
+- Address type: Random (Resolvable)
+- Service UUID: `0000feb9-0000-1000-8000-00805f9b34fb`
+- Manufacturer company ID: `0x00C4` (LG Electronics)
+
+### Raw advertising data
+
+The relevant HCI Extended Advertising Report contained:
+
+```text
+Advertising Data[29]:
+02 01 1a
+09 ff c4 00 09 33 14 12 16 80
+02 0a d4
+03 03 b9 fe
+08 1b 00 41 83 26 98 03 dc
+```
+
+Decoded AD structures:
+
+| AD structure | Meaning |
+|---|---|
+| `02 01 1a` | Flags |
+| `09 ff c4 00 09 33 14 12 16 80` | LG manufacturer-specific data |
+| `02 0a d4` | TX Power |
+| `03 03 b9 fe` | Complete 16-bit service UUID list containing `feb9` |
+| `08 1b 00 41 83 26 98 03 dc` | Unknown AD type `0x1B`, containing the registration-related data |
+
+### AD type `0x1B`
+
+The final structure is particularly important because the ThinQ APK contains a parser for AD type `0x1B`.
+
+Its data is:
+
+```text
+00 41 83 26 98 03 dc
+```
+
+The APK's parsing logic reverses the six address bytes following the leading `00`:
+
+```text
+41 83 26 98 03 dc
+        ↓ reverse
+dc 03 98 26 83 41
+```
+
+This gives the candidate address:
+
+```text
+DC:03:98:26:83:41
+```
+
+This is an APK-derived interpretation of the field. The meaning of the leading `00` and the candidate address's exact role have not yet been independently verified.
+
+### Additional observations
+
+- The TV's manufacturer data matches the earlier Bleak scan.
+- The TV was advertising as a scannable, non-connectable legacy advertising device (`ADV_SCAN_IND`).
+- Its scan response contained the complete local name `[TV] Gym Room`.
+- The same advertisement was observed while the laptop was simultaneously advertising and scanning during Stage 1.
+
+### What this establishes
+
+The TV's advertisement contains the exact AD type `0x1B` expected by the ThinQ APK parser. We can now inspect the actual bytes rather than relying on an interpretation of the decompiled code alone.
+
+This does not yet establish that the candidate address is accepted by the TV's wake-up protocol, or that a Linux implementation can successfully wake it.
+
+### Outstanding questions
+
+- What does the leading `00` represent?
+- Is the derived address the exact address used for TV registration?
+- What additional conditions does the TV require before accepting a wake-up advertisement?
