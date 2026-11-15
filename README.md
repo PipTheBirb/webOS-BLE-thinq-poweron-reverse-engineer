@@ -204,3 +204,87 @@ This does not yet establish that the candidate address is accepted by the TV's w
 - What does the leading `00` represent?
 - Is the derived address the exact address used for TV registration?
 - What additional conditions does the TV require before accepting a wake-up advertisement?
+
+## TV address decoding and registration matching
+
+The Stage 2 HCI capture exposed an additional advertising-data field used by ThinQ to identify the television.
+
+The captured advertisement contained this AD structure:
+
+```text
+08 1B 00 41 83 26 98 03 DC
+```
+
+The AD type is `0x1B`. The ThinQ APK parses this field in `LeccpAdvertisingInfo.getAddress()`.
+
+The parser:
+1. Locates an AD structure with type `0x1B`.
+2. Copies the final six bytes of its value.
+3. Reverses their order.
+4. Formats the result as a lowercase, colon-separated MAC address.
+
+For the captured advertisement, this produces:
+
+```text
+DC 03 98 26 83 41
+```
+
+or:
+
+```text
+dc:03:98:26:83:41
+```
+
+The parser does not validate the leading `00` byte in this captured structure; it is skipped by the length-based extraction.
+
+### How ThinQ matches the television
+
+Further static analysis established that this parsed address is used as the BLE discovery identifier.
+
+The relevant path is:
+
+```text
+BleScanner.updateDevice()
+    → LeccpAdvertisingInfo.getAddress()
+    → LBSManager
+    → LBSDevice.id
+```
+
+During BLE wake-up, `ConnectSdkHandler.powerOnBLEWakeup()` reads the stored `registered_bt_address`, lowercases it, and passes it to `ConnectSdkHandler$45`.
+
+The callback compares that value with `LBSDevice.id` using `equalsIgnoreCase()`.
+
+Therefore, the address extracted from AD type `0x1B` is directly compared with the television's stored registration address.
+
+### Where registered_bt_address comes from
+
+Static analysis identified two population paths.
+
+**TV registration callback**
+
+`ConnectSdkHandler$53$1` handles the registration callback. When `data_register_wake_up` is enabled, it obtains the TV's ThingsDevice service ID. If that value is a non-empty MAC address, it stores it as `registered_bt_address` and sets `supported_ble_wakeup`.
+
+**BLE wake registration**
+
+`ConnectSdkHandler.registrationBLEWakeup()` also populates the value after successful Wi-Fi wake registration. Its fallback order is:
+
+1. An existing `registered_bt_address`.
+2. `ConnectableDevice.getBluetoothMac()`.
+3. The matched `LBSDevice.id`.
+
+The value is stored in the ThingsDevice data Bundle and persisted through `DeviceManager.updateDevice()`.
+
+### What this establishes
+
+The APK's address-decoding and matching logic is now understood:
+
+- The TV's AD type `0x1B` field supplies the address used for BLE discovery.
+- ThinQ compares that parsed address with `registered_bt_address`.
+- The registration callback can populate `registered_bt_address` from the TV's service ID.
+- A separate registration path can fall back to the ConnectSDK Bluetooth MAC or discovered LBS device ID.
+
+For the captured advertisement, the parser produces `dc:03:98:26:83:41`.
+
+**Important limitation:** this does not independently prove that this exact value is currently stored as `registered_bt_address` for the captured TV. That would require observing the stored registration value or a successful runtime match.
+
+No LG wake-up advertisement has been transmitted from Linux at this stage.
