@@ -102,13 +102,15 @@ The following have been established:
 - A real LG television has been observed advertising the expected `feb9` service and `0x00C4` manufacturer identifier in standby.
 - The Linux Bluetooth adapter can advertise and scan simultaneously.
 - Advertising and scanning cleanup has been tested.
+- address matching confirmed with crossref to thinq apk
+- successful wake-up not tested yet!
 
 The actual LG wake advertisement has **not yet been transmitted from Linux**, and successful television wake-up has not been demonstrated.
 
 ## Outstanding questions
 
-- What do the six bytes in the television's manufacturer data represent?
-- Can the raw advertisement expose the separate AD type `0x1b` field used by ThinQ?
+- What do the six bytes in the television's manufacturer data represent? - still unresolved, we can't decode them yet.
+- Can the raw advertisement expose the separate AD type `0x1b` field used by ThinQ? - resolved
 - Does the television validate the phone identity, advertiser address, or both?
 - Does the television require the empty GATT server used by the ThinQ application?
 - Will BlueZ's advertising implementation be accepted by the television?
