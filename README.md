@@ -1,5 +1,5 @@
-# webOS-BLE-thinq-poweron-reverse-engineer
-
+# [!!!ABANDONED PROJECT!!!] webOS-BLE-thinq-poweron-reverse-engineer
+#Note - I've abandoned any further form of discovery of this as I am not personally using this method any further, though I will keep the repo up for anyone to possibly use these findings for any future BLE power-on command reimplementations, make of this what you will.
 Reverse engineered case study of sorts using opencode zen and chatgpt to help analyse.
 
 LG ThinQ uses the LECCP protocol to power on BLE tv.
